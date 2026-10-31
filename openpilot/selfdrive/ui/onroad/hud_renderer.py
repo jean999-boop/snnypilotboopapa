@@ -178,3 +178,23 @@ class HudRenderer(Widget):
     unit_text_size = measure_text_cached(self._font_medium, unit_text, FONT_SIZES.speed_unit)
     unit_pos = rl.Vector2(rect.x + rect.width / 2 - unit_text_size.x / 2, 290 - unit_text_size.y / 2)
     rl.draw_text_ex(self._font_medium, unit_text, unit_pos, FONT_SIZES.speed_unit, 0, COLORS.WHITE_TRANSLUCENT)
+
+    # --- My CUSTOM BRAND DISPLAY (PARK ONLY) ---
+    try:
+      sm_hud = ui_state.sm
+      if sm_hud and sm_hud.valid.get('carState', False):
+        car_state = sm_hud['carState']
+        gear = getattr(car_state, 'gearShifter', '')
+
+        # Only show text if gear is strictly 'park' (instantly hides in R, N, D)
+        if str(gear).lower() == 'park':
+          text_x = rl.get_screen_width() - 320
+          text_y = 120
+
+          # Render using sunnypilot's pre-loaded native pyray layout font
+          rl.draw_text_ex(self._font_bold, "sunnypilotboop",
+                          rl.Vector2(text_x, text_y),
+                          30, 0, rl.Color(255, 255, 255, 180))
+    except Exception:
+      pass
+    # --------------------------------------------
