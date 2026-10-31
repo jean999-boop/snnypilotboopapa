@@ -81,9 +81,9 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       if getattr(self, 'v_desired', 0.0) < STOP_HOLD_THRESHOLD_MS:
         v_target = 0.0
         self.a_desired = min(getattr(self, 'a_desired', 0.0), -0.5)  # Apply gentle hold braking pressure
-    
-            
-                 
+
+
+
     if len(sm['carControl'].orientationNED) == 3:
       accel_coast = get_coast_accel(sm['carControl'].orientationNED[1])
     else:
@@ -94,23 +94,35 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     v_cruise = v_cruise_kph * CV.KPH_TO_MS
     if sm['controlsState'].forceDecel:
       v_cruise = 0.0
-      
+
     # =========================================================================
     # --- CUSTOM QUEBEC SPEED LIMIT BUTTON-TAP SYNC HOOK ---
     # =========================================================================
-    # Correctly read the active metric speed limit directly from the sub-message buffer
+    # Read the active speed limit safely from the longitudinal plan message
     current_limit_ms = sm['longitudinalPlan'].speedLimit if sm.valid.get('longitudinalPlan', False) else 0.0
-    
-    if current_limit_ms > 0:
-      # Intercept physical button stalk clicks (RES+ or SET-)
-      for be in sm['carState'].buttonEvents:
-        if be.pressed and be.type in ['cruiseStalkDown', 'setCruise', 'cruiseStalkUp', 'resumeCruise']:
-          # Instantly force openpilot's trajectory planner speed to match the metric road sign
-          v_cruise = current_limit_ms
-          # Sync back to the vehicle's state machine tracking variables
-          self.v_desired_filter.x = v_ego
-    # =========================================================================
 
+    if current_limit_ms > 0:
+      # Convert m/s map data directly to local km/h integers for openpilot cruise tracking
+      limit_kmh = int(round(current_limit_ms * 3.6))
+
+      # Grab the vehicle's current cruise set speed to evaluate jumps
+      current_v_cruise_kmh = v_cruise
+
+      for be in sm['carState'].buttonEvents:
+        if be.pressed:
+          # --- CASE 1: UPWARD TAP (RES+ or StalkUp) ---
+          # Target higher speed limit only if current cruise speed is below it
+          if be.type in ['cruiseStalkUp', 'resumeCruise'] and current_v_cruise_kmh < limit_kmh:
+            v_cruise = limit_kmh
+            self.v_desired_filter.x = sm['carState'].vEgo
+
+          # --- CASE 2: DOWNWARD TAP (SET- or StalkDown) ---
+          # Target lower speed limit only if current cruise speed is above it
+          elif be.type in ['cruiseStalkDown', 'setCruise'] and current_v_cruise_kmh > limit_kmh:
+            v_cruise = limit_kmh
+            self.v_desired_filter.x = sm['carState'].vEgo
+    # =========================================================================
+    
     long_control_off = sm['controlsState'].longControlState == LongCtrlState.off
 
     # Reset current state when not engaged, or user is controlling the speed
