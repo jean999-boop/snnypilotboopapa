@@ -37,6 +37,7 @@ def get_max_accel(v_ego):
 def get_coast_accel(pitch):
   return np.sin(pitch) * -5.65 - 0.3  # fitted from data using xx/projects/allow_throttle/compute_coast_accel.py
 
+# --- My CUSTOM PROGRESSIVE ACCELERATION TAPER (FAST BUT SMOOTH) ---
 
 def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, accel_coast, allow_throttle):
   max_accel = ACCEL_MAX if e2e else get_max_accel(v_ego)
@@ -53,6 +54,17 @@ def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, 
 
   target_accel = np.clip(v_cruise - v_ego, A_CRUISE_MIN, max_accel)
   j_cruise = np.interp(v_ego, A_CRUISE_MAX_BP, J_CRUISE_VALS)
+
+  # --- My CUSTOM PROGRESSIVE ACCELERATION TAPER (FAST BUT SMOOTH) ---
+  # If we are trying to accelerate (target > prev) and we are recovering from a low/negative acceleration state
+  if target_accel > a_cruise_prev and a_cruise_prev < 0.3:
+    v_error = v_cruise - v_ego
+    if v_error > 2.0:  # Only smooth if we actually need to pick up substantial speed
+      # Restrict the initialization rate (jerk) so the car rolls into the throttle over a fraction of a second
+      # This completely removes the aggressive initial snap, but still allows full max_accel to build up rapidly
+      jerk_smooth_factor = np.interp(a_cruise_prev, [-0.5, 0.0, 0.3], [0.4, 0.6, 1.0])
+      j_cruise = j_cruise * jerk_smooth_factor
+
   target_accel = float(np.clip(target_accel, a_cruise_prev - j_cruise * dt, a_cruise_prev + j_cruise * dt))
 
   return target_accel
