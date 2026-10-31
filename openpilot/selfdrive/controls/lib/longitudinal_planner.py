@@ -29,11 +29,14 @@ MIN_ALLOW_THROTTLE_SPEED = 2.5
 _A_TOTAL_MAX_V = [1.7, 3.2]
 _A_TOTAL_MAX_BP = [20., 40.]
 
+
 def get_max_accel(v_ego):
   return np.interp(v_ego, A_CRUISE_MAX_BP, A_CRUISE_MAX_VALS)
 
+
 def get_coast_accel(pitch):
   return np.sin(pitch) * -5.65 - 0.3  # fitted from data using xx/projects/allow_throttle/compute_coast_accel.py
+
 
 def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, accel_coast, allow_throttle):
   max_accel = ACCEL_MAX if e2e else get_max_accel(v_ego)
@@ -45,7 +48,7 @@ def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, 
     max_accel = min(max_accel, a_x_allowed)
     if not allow_throttle:
       clipped_accel_coast = max(accel_coast, ACCEL_MIN)
-      coast_limit = np.interp(v_ego, [MIN_ALLOW_THROTTLE_SPEED, MIN_ALLOW_THROTTLE_SPEED*2], [max_accel, clipped_accel_coast])
+      coast_limit = np.interp(v_ego, [MIN_ALLOW_THROTTLE_SPEED, MIN_ALLOW_THROTTLE_SPEED * 2], [max_accel, clipped_accel_coast])
       max_accel = min(max_accel, coast_limit)
 
   target_accel = np.clip(v_cruise - v_ego, A_CRUISE_MIN, max_accel)
@@ -74,55 +77,12 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.j_desired_trajectory = np.zeros(CONTROL_N)
 
   def update(self, sm):
-    LongitudinalPlannerSP.update(self, sm)
-    # Custom Stop Sign and Traffic Light Hold Logic
-    STOP_HOLD_THRESHOLD_MS = 0.2  # Speed threshold (~0.7 km/h) to consider fully stopped
-    if getattr(self, 'stop_sign_detected', False) or getattr(self, 'traffic_light_state', '') == 'RED':
-      if getattr(self, 'v_desired', 0.0) < STOP_HOLD_THRESHOLD_MS:
-        v_target = 0.0
-        self.a_desired = min(getattr(self, 'a_desired', 0.0), -0.5)  # Apply gentle hold braking pressure
-
-
-
-    if len(sm['carControl'].orientationNED) == 3:
-      accel_coast = get_coast_accel(sm['carControl'].orientationNED[1])
-    else:
-      accel_coast = ACCEL_MAX
-
     v_ego = sm['carState'].vEgo
     v_cruise_kph = min(sm['carState'].vCruise, V_CRUISE_MAX)
     v_cruise = v_cruise_kph * CV.KPH_TO_MS
     if sm['controlsState'].forceDecel:
       v_cruise = 0.0
 
-    # =========================================================================
-    # --- CUSTOM QUEBEC SPEED LIMIT BUTTON-TAP SYNC HOOK ---
-    # =========================================================================
-    # Read the active speed limit safely from the longitudinal plan message
-    current_limit_ms = sm['longitudinalPlan'].speedLimit if sm.valid.get('longitudinalPlan', False) else 0.0
-
-    if current_limit_ms > 0:
-      # Convert m/s map data directly to local km/h integers for openpilot cruise tracking
-      limit_kmh = int(round(current_limit_ms * 3.6))
-
-      # Grab the vehicle's current cruise set speed to evaluate jumps
-      current_v_cruise_kmh = v_cruise
-
-      for be in sm['carState'].buttonEvents:
-        if be.pressed:
-          # --- CASE 1: UPWARD TAP (RES+ or StalkUp) ---
-          # Target higher speed limit only if current cruise speed is below it
-          if be.type in ['cruiseStalkUp', 'resumeCruise'] and current_v_cruise_kmh < limit_kmh:
-            v_cruise = limit_kmh
-            self.v_desired_filter.x = sm['carState'].vEgo
-
-          # --- CASE 2: DOWNWARD TAP (SET- or StalkDown) ---
-          # Target lower speed limit only if current cruise speed is above it
-          elif be.type in ['cruiseStalkDown', 'setCruise'] and current_v_cruise_kmh > limit_kmh:
-            v_cruise = limit_kmh
-            self.v_desired_filter.x = sm['carState'].vEgo
-    # =========================================================================
-    
     long_control_off = sm['controlsState'].longControlState == LongCtrlState.off
 
     # Reset current state when not engaged, or user is controlling the speed
@@ -151,6 +111,25 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # Get new v_cruise and a_target from Smart Cruise Control and Speed Limit Assist
     v_cruise, self.output_a_target = LongitudinalPlannerSP.update_targets(self, sm, self.v_desired_filter.x, self.output_a_target, v_cruise)
 
+    # =========================================================================
+    # --- CUSTOM QUEBEC SPEED LIMIT BUTTON-TAP SYNC HOOK ---
+    # =========================================================================
+    current_limit_ms = sm['longitudinalPlan'].speedLimit if sm.valid.get('longitudinalPlan', False) else 0.0
+
+    if current_limit_ms > 0:
+      limit_kmh = int(round(current_limit_ms * 3.6))
+      current_v_cruise_kmh = v_cruise
+
+      for be in sm['carState'].buttonEvents:
+        if be.pressed:
+          if be.type in ['cruiseStalkUp', 'resumeCruise'] and current_v_cruise_kmh < limit_kmh:
+            v_cruise = limit_kmh
+            self.v_desired_filter.x = sm['carState'].vEgo
+          elif be.type in ['cruiseStalkDown', 'setCruise'] and current_v_cruise_kmh > limit_kmh:
+            v_cruise = limit_kmh
+            self.v_desired_filter.x = sm['carState'].vEgo
+    # =========================================================================
+
     self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
     self.mpc.set_cur_state(self.v_desired_filter.x, self.output_a_target)
     self.mpc.update(sm['radarState'], personality=sm['selfdriveState'].personality)
@@ -159,7 +138,6 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.a_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.a_solution)
     self.j_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC[:-1], self.mpc.j_solution)
 
-    # TODO counter is only needed because radar is glitchy, remove once radar is gone
     self.fcw = self.mpc.crash_cnt > 2 and not sm['carState'].standstill
     if self.fcw:
       cloudlog.info("FCW triggered")
@@ -167,14 +145,18 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # Save starting point for next iteration
     a_prev = self.output_a_target
 
-    action_t =  self.CP.longitudinalActuatorDelay + DT_MDL
-    output_a_target_mpc = get_accel_from_plan(self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX,
-                                              action_t=action_t)
+    action_t = self.CP.longitudinalActuatorDelay + DT_MDL
+    output_a_target_mpc = get_accel_from_plan(self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX, action_t=action_t)
     output_should_stop_mpc = should_stop(v_ego, output_a_target_mpc)
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
     is_e2e = self.is_e2e(sm)
+
+    if len(sm['carControl'].orientationNED) == 3:
+      accel_coast = get_coast_accel(sm['carControl'].orientationNED[1])
+    else:
+      accel_coast = ACCEL_MAX
 
     self.a_cruise = get_cruise_accel(is_e2e, v_cruise, v_ego,
                                      self.a_cruise, steer_angle_without_offset, self.CP, self.dt,
@@ -186,15 +168,49 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     if is_e2e:
       candidates.append((output_a_target_e2e, LongitudinalPlanSource.e2e, output_should_stop_e2e))
 
+    # =========================================================================
+    # --- COMBINED QUEBEC STOP SIGN & TRAFFIC LIGHT INTERSECTION LOGIC ---
+    # =========================================================================
+    quebec_intersection_accel = None
+    quebec_should_stop = False
+    inject_quebec_candidate = False
+
+    if sm.valid.get('modelV2', False):
+      model_data = sm['modelV2']
+      stop_sign_prob = getattr(model_data.meta, 'stopSignProb', 0.0)
+      brake_prediction = getattr(model_data.meta.disengagePredictions, 'brake', 0.0)
+
+      is_stopped_or_creeping = v_ego < 0.2  # ~0.7 km/h
+      user_wants_to_go = sm['carState'].gasPressed
+
+      # Unified Hold Check combining your context fields
+      has_stop_or_red_light = (stop_sign_prob > 0.35 or
+                               getattr(self, 'stop_sign_detected', False) or
+                               getattr(self, 'traffic_light_state', '') == 'RED')
+
+      if has_stop_or_red_light and not user_wants_to_go:
+        quebec_intersection_accel = -0.6
+        inject_quebec_candidate = True
+
+      if (stop_sign_prob > 0.5 or brake_prediction > 0.4 or is_stopped_or_creeping) and not user_wants_to_go:
+        inject_quebec_candidate = True
+        if is_stopped_or_creeping:
+          quebec_intersection_accel = -1.5
+          quebec_should_stop = True
+
+    if inject_quebec_candidate and quebec_intersection_accel is not None:
+      candidates.append((quebec_intersection_accel, LongitudinalPlanSource.e2e, quebec_should_stop))
+    # =========================================================================
+
     output_a_target, self.mpc.source, _ = min(candidates, key=lambda c: c[0])
-    self.output_should_stop = any(should_stop for _, _, should_stop in candidates)
+
+    self.output_should_stop = any(s_stop for _, _, s_stop in candidates) or quebec_should_stop
     self.output_a_target = np.clip(output_a_target, ACCEL_MIN, ACCEL_MAX)
 
     self.v_desired_filter.x = self.v_desired_filter.x + self.dt * (self.output_a_target + a_prev) / 2.0
 
   def publish(self, sm, pm):
     plan_send = messaging.new_message('longitudinalPlan')
-
     plan_send.valid = sm.all_checks()
 
     longitudinalPlan = plan_send.longitudinalPlan
