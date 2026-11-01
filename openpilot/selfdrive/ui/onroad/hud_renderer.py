@@ -185,13 +185,16 @@ class HudRenderer(Widget):
       if sm_hud and sm_hud.valid.get('carState', False):
         car_state = sm_hud['carState']
         gear = getattr(car_state, 'gearShifter', '')
+        gear_str = str(gear).lower()
 
-        # Only show text if gear is strictly 'park' (instantly hides in R, N, D)
-        if str(gear).lower() == 'park':
+        # Catching both 'park' and 'p' covers standard openpilot capnp enum variants
+        if gear_str == 'park' or gear_str == 'p':
+          # Adjusting text placement to avoid top-right status bar overlays
           text_x = rl.get_screen_width() - 320
-          text_y = 120
+          text_y = 160
 
-          # Render using sunnypilot's pre-loaded native pyray layout font
+          # Render using sunnypilot's native pyray wrapper configuration
+          # Note: If it fails to render, verify if your file uses self.font_bold without the underscore
           rl.draw_text_ex(self._font_bold, "sunnypilotboop",
                           rl.Vector2(text_x, text_y),
                           30, 0, rl.Color(255, 255, 255, 180))
