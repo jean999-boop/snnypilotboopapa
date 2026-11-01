@@ -134,13 +134,14 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
       for be in sm['carState'].buttonEvents:
         if be.pressed:
-          if be.type in ['cruiseStalkUp', 'resumeCruise'] and current_v_cruise_kmh < limit_kmh:
+          # FIX: Added .name to evaluate the string type correctly
+          if be.type.name in ['cruiseStalkUp', 'resumeCruise'] and current_v_cruise_kmh < limit_kmh:
             v_cruise = limit_kmh
-            self.v_desired_filter.x = sm['carState'].vEgo
-          elif be.type in ['cruiseStalkDown', 'setCruise'] and current_v_cruise_kmh > limit_kmh:
+          elif be.type.name in ['cruiseStalkDown', 'setCruise'] and current_v_cruise_kmh > limit_kmh:
             v_cruise = limit_kmh
-            self.v_desired_filter.x = sm['carState'].vEgo
-    # =========================================================================
+
+
+  # =========================================================================
 
     self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
     self.mpc.set_cur_state(self.v_desired_filter.x, self.output_a_target)
@@ -192,7 +193,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       stop_sign_prob = getattr(model_data.meta, 'stopSignProb', 0.0)
       brake_prediction = getattr(model_data.meta.disengagePredictions, 'brake', 0.0)
 
-      is_stopped_or_creeping = v_ego < 0.2  # ~0.7 km/h
+      is_stopped_or_creeping = self.v_ego < 0.2  # ~0.7 km/h
       user_wants_to_go = sm['carState'].gasPressed
 
       # Unified Hold Check combining your context fields
@@ -200,19 +201,28 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
                                getattr(self, 'stop_sign_detected', False) or
                                getattr(self, 'traffic_light_state', '') == 'RED')
 
-      if has_stop_or_red_light and not user_wants_to_go:
-        quebec_intersection_accel = -0.6
-        inject_quebec_candidate = True
+      # Only evaluate if the user isn't overriding with the gas pedal
+      if not user_wants_to_go:
 
-      if (stop_sign_prob > 0.5 or brake_prediction > 0.4 or is_stopped_or_creeping) and not user_wants_to_go:
-        inject_quebec_candidate = True
-        if is_stopped_or_creeping:
+        # Priority 1: Latch and HOLD if already stopped at a valid intersection state
+        if is_stopped_or_creeping and has_stop_or_red_light:
           quebec_intersection_accel = -1.5
           quebec_should_stop = True
+          inject_quebec_candidate = True
+
+        # Priority 2: Heavy braking on aggressive approach
+        elif stop_sign_prob > 0.5 or brake_prediction > 0.4:
+          quebec_intersection_accel = -1.0
+          inject_quebec_candidate = True
+
+        # Priority 3: Gentle approach deceleration based on early map/state data
+        elif has_stop_or_red_light:
+          quebec_intersection_accel = -0.6
+          inject_quebec_candidate = True
 
     if inject_quebec_candidate and quebec_intersection_accel is not None:
-      candidates.append((quebec_intersection_accel, LongitudinalPlanSource.e2e, quebec_should_stop))
-    # =========================================================================
+      candidates.append((quebec_intersection_accel, LongitudinalPlanSource.model, quebec_should_stop))
+    # ==================================================================================================================================================
 
     output_a_target, self.mpc.source, _ = min(candidates, key=lambda c: c[0])
 
