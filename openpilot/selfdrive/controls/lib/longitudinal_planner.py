@@ -53,7 +53,7 @@ def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, 
       max_accel = min(max_accel, coast_limit)
 
   target_accel = np.clip(v_cruise - v_ego, A_CRUISE_MIN, max_accel)
-  j_cruise = np.interp(v_ego, A_CRUISE_MAX_BP, J_CRUISE_VALS)
+  j_cruise = np.interp(v_ego,_A_CRUISE_MAX_BP,_J_CRUISE_MAX_V)
 
   # --- My CUSTOM PROGRESSIVE ACCELERATION TAPER (FAST BUT SMOOTH) ---
   # If we are trying to accelerate (target > prev) and we are recovering from a low/negative acceleration state
