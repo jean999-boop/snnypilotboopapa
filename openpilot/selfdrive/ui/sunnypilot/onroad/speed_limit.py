@@ -213,8 +213,6 @@ class SpeedLimitRenderer(Widget, SpeedLimitAlertRenderer):
             # 5. Center and paint the numerical digits inside the boundary box
             text_offset = 22 if len(limit_str) >= 3 else 32
             rl.draw_text(limit_str, int(x + text_offset), int(y + 45), 48, rl.COLOR_BLACK)
-
-            return  # Exit early so it skips the rest of the file's circular rendering
     # =========================================================================
 
      sign_rect = rl.Rectangle(x, y, width, UI_CONFIG.set_speed_height + 6 * 2)
@@ -229,7 +227,7 @@ class SpeedLimitRenderer(Widget, SpeedLimitAlertRenderer):
         self._draw_ahead_info(sign_rect)
 
   def _draw_sign_main(self, rect, alpha=1.0):
-    
+
     is_overspeed = has_limit and round(self.speed_limit_final_last) < round(self.speed)
 
     limit_str = str(round(self.speed_limit_last)) if has_limit else "---"
