@@ -189,12 +189,11 @@ class HudRenderer(Widget):
 
         # Catching both 'park' and 'p' covers standard openpilot capnp enum variants
         if gear_str == 'park' or gear_str == 'p':
-          # Adjusting text placement to avoid top-right status bar overlays
-          text_x = rl.get_screen_width() - 320
+          # FIX: Tied layout boundary cleanly to the local widget box width rather than absolute screen metrics
+          text_x = rect.x + rect.width - 320
           text_y = 160
 
           # Render using sunnypilot's native pyray wrapper configuration
-          # Note: If it fails to render, verify if your file uses self.font_bold without the underscore
           rl.draw_text_ex(self._font_bold, "sunnypilotboop",
                           rl.Vector2(text_x, text_y),
                           30, 0, rl.Color(255, 255, 255, 180))
