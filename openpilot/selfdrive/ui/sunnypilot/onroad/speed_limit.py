@@ -1,4 +1,4 @@
-"""
+    # ============"""
 Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 
 This file is part of sunnypilot and is licensed under the MIT License.
@@ -189,7 +189,7 @@ class SpeedLimitRenderer(Widget, SpeedLimitAlertRenderer):
     # =========================================================================
     # --- CUSTOM QUEBEC RECTANGULAR SPEED LIMIT SIGN LAYOUT ---
     # =========================================================================
-    if ui_state.sm.valid.get('longitudinalPlan', False):
+
         plan = ui_state.sm['longitudinalPlan']
 
         if plan.speedLimitValid and plan.speedLimit > 0:
@@ -215,47 +215,70 @@ class SpeedLimitRenderer(Widget, SpeedLimitAlertRenderer):
             rl.draw_text(limit_str, int(x + text_offset), int(y + 45), 48, rl.COLOR_BLACK)
     # =========================================================================
 
-     sign_rect = rl.Rectangle(x, y, width, UI_CONFIG.set_speed_height + 6 * 2)
+    sign_rect = rl.Rectangle(x, y, width, UI_CONFIG.set_speed_height + 6 * 2)
 
     alpha = self._pre_active_fade.alpha
 
     if ui_state.speed_limit_mode != SpeedLimitMode.off:
-      self._draw_sign_main(sign_rect, alpha)
-      if self.speed_limit_assist_state == AssistState.preActive:
-        self._draw_pre_active_arrow(sign_rect)
-      else:
-        self._draw_ahead_info(sign_rect)
+        self._draw_sign_main(sign_rect, alpha)
+        if self.speed_limit_assist_state == AssistState.preActive:
+            self._draw_pre_active_arrow(sign_rect)
+        else:
+            self._draw_ahead_info(sign_rect)
 
   def _draw_sign_main(self, rect, alpha=1.0):
-
+    has_limit = self.speed_limit_valid and self.speed_limit_last > 0
     is_overspeed = has_limit and round(self.speed_limit_final_last) < round(self.speed)
 
     limit_str = str(round(self.speed_limit_last)) if has_limit else "---"
     sub_text = ""
     if self.speed_limit_offset != 0:
-      sign = "" if self.speed_limit_offset > 0 else "-"
-      sub_text = f"{sign}{round(abs(self.speed_limit_offset))}"
+        sign = "" if self.speed_limit_offset > 0 else "-"
+        sub_text = f"{sign}{round(abs(self.speed_limit_offset))}"
 
     txt_color = Colors.BLACK
     if speed_limit_warning_enabled and is_overspeed:
-      txt_color = Colors.RED
+        txt_color = Colors.RED
     elif not self.speed_limit_valid:
-      txt_color = Colors.GREY
+        txt_color = Colors.GREY
 
+    # ROUTE TO QUEBEC / METRIC LAYOUT
     if ui_state.is_metric:
-      self._render_vienna(rect, limit_str, sub_text, txt_color, has_limit, alpha)
+        # Calls your custom Quebec sign logic instead of European circular signs
+        self._render_quebec(rect, limit_str, txt_color, alpha)
     else:
-      self._render_mutcd(rect, limit_str, sub_text, txt_color, has_limit, alpha)
+        self._render_mutcd(rect, limit_str, sub_text, txt_color, has_limit, alpha)
+
+  def _render_quebec(self, rect, val, color, alpha=1.0):
+    """ Your custom Quebec 'MAXIMUM' rectangular speed limit layout """
+    white = rl.color_alpha(Colors.WHITE, alpha)
+    black = rl.color_alpha(Colors.BLACK, alpha)
+    text_color = rl.color_alpha(color, alpha)
+
+    # 1. Establish layout dimensions matching a North American rectangle
+    sign_w = 110
+    sign_h = 140
+
+    # 2. Paint the clean white rectangular background using Raylib primitives
+    rl.draw_rectangle_rounded(rl.Rectangle(rect.x, rect.y, sign_w, sign_h), 0.1, 4, white)
+    rl.draw_rectangle_rounded_lines_ex(rl.Rectangle(rect.x, rect.y, sign_w, sign_h), 0.1, 4, 4, black)
+
+    # 3. Draw the "MAXIMUM" header text exactly like a Quebec highway sign
+    rl.draw_text("MAXIMUM", int(rect.x + 16), int(rect.y + 12), 16, black)
+
+    # 4. Center and paint the numerical digits inside the boundary box
+    text_offset = 22 if len(val) >= 3 else 32
+    rl.draw_text(val, int(rect.x + text_offset), int(rect.y + 45), 48, text_color)
 
   def _draw_pre_active_arrow(self, sign_rect):
     _, txt_icon, icon_alpha, _, _ = SpeedLimitAlertRenderer.speed_limit_pre_active_icon_helper(self)
     if icon_alpha > 0 and txt_icon != self.arrow_blank:
-      sign_margin = 12
-      arrow_spacing = int(sign_margin * 1.4)
-      arrow_x = sign_rect.x + sign_rect.width + arrow_spacing
-      arrow_y = sign_rect.y + (sign_rect.height - txt_icon.height) / 2
-      color = rl.Color(255, 255, 255, int(icon_alpha))
-      rl.draw_texture_ex(txt_icon, rl.Vector2(arrow_x, arrow_y), 0.0, 1.0, color)
+        sign_margin = 12
+        arrow_spacing = int(sign_margin * 1.4)
+        arrow_x = sign_rect.x + sign_rect.width + arrow_spacing
+        arrow_y = sign_rect.y + (sign_rect.height - txt_icon.height) / 2
+        color = rl.Color(255, 255, 255, int(icon_alpha))
+        rl.draw_texture_ex(txt_icon, rl.Vector2(arrow_x, arrow_y), 0.0, 1.0, color)
 
   def _render_vienna(self, rect, val, sub, color, has_limit, alpha=1.0):
     center = rl.Vector2(rect.x + rect.width / 2, rect.y + rect.height / 2)
@@ -274,14 +297,12 @@ class SpeedLimitRenderer(Widget, SpeedLimitAlertRenderer):
     self._draw_text_centered(self.font_bold, val, font_size, center, text_color)
 
     if sub and has_limit:
-      s_radius = radius * 0.4
-      s_center = rl.Vector2(rect.x + rect.width - s_radius / 2, rect.y + s_radius / 2)
-
-      rl.draw_circle_v(s_center, s_radius, black)
-      rl.draw_ring(s_center, s_radius - 3, s_radius, 0, 360, 36, dark_grey)
-
-      font_scale = 0.5 if len(sub) < 3 else 0.45
-      self._draw_text_centered(self.font_bold, sub, int(s_radius * 2 * font_scale), s_center, white)
+        s_radius = radius * 0.4
+        s_center = rl.Vector2(rect.x + rect.width - s_radius / 2, rect.y + s_radius / 2)
+        rl.draw_circle_v(s_center, s_radius, black)
+        rl.draw_ring(s_center, s_radius - 3, s_radius, 0, 360, 36, dark_grey)
+        font_scale = 0.5 if len(sub) < 3 else 0.45
+        self._draw_text_centered(self.font_bold, sub, int(s_radius * 2 * font_scale), s_center, white)
 
   def _render_mutcd(self, rect, val, sub, color, has_limit, alpha=1.0):
     white = rl.color_alpha(Colors.WHITE, alpha)
@@ -303,22 +324,20 @@ class SpeedLimitRenderer(Widget, SpeedLimitAlertRenderer):
     self._draw_text_centered(self.font_bold, val, 90, rl.Vector2(rect.x + rect.width / 2, rect.y + 150), text_color)
 
     if sub and has_limit:
-      box_sz = rect.width * 0.3
-      overlap = box_sz * 0.2
-      s_rect = rl.Rectangle(rect.x + rect.width - box_sz / 1.5 + overlap, rect.y - box_sz / 1.25 + overlap, box_sz, box_sz)
-
-      rl.draw_rectangle_rounded(s_rect, 0.35, 10, black)
-      rl.draw_rectangle_rounded_lines_ex(s_rect, 0.35, 10, 6, dark_grey)
-
-      f_scale = 0.6 if len(sub) < 3 else 0.475
-      self._draw_text_centered(self.font_bold, sub, int(box_sz * f_scale), rl.Vector2(s_rect.x + box_sz / 2, s_rect.y + box_sz / 2), white)
+        box_sz = rect.width * 0.3
+        overlap = box_sz * 0.2
+        s_rect = rl.Rectangle(rect.x + rect.width - box_sz / 1.5 + overlap, rect.y - box_sz / 1.25 + overlap, box_sz, box_sz)
+        rl.draw_rectangle_rounded(s_rect, 0.35, 10, black)
+        rl.draw_rectangle_rounded_lines_ex(s_rect, 0.35, 10, 6, dark_grey)
+        f_scale = 0.6 if len(sub) < 3 else 0.475
+        self._draw_text_centered(self.font_bold, sub, int(box_sz * f_scale), rl.Vector2(s_rect.x + box_sz / 2, s_rect.y + box_sz / 2), white)
 
   def _draw_ahead_info(self, sign_rect):
     source_is_map = self.speed_limit_source == SpeedLimitSource.map
     valid = self.speed_limit_ahead_valid and self.speed_limit_ahead > 0 and self.speed_limit_ahead != self.speed_limit
 
     if not (valid and source_is_map):
-      return
+        return
 
     rect = rl.Rectangle(sign_rect.x + (sign_rect.width - 170) / 2, sign_rect.y + sign_rect.height + 10, 170, 160)
     rl.draw_rectangle_rounded(rect, 0.35, 10, Colors.SUB_BG)
@@ -331,26 +350,19 @@ class SpeedLimitRenderer(Widget, SpeedLimitAlertRenderer):
 
   @staticmethod
   def _format_dist(d):
-    # metric
     if ui_state.is_metric:
-      if d < 50:
-        return tr("Near")
+        if d < 50:
+            return tr("Near")
+        if d >= 1000:
+            return f"{d / 1000:.1f} km"
+        d_rounded = round(d, -1) if d < 200 else round(d, -2)
+        return f"{int(d_rounded)} m"
 
-      if d >= 1000:
-        return f"{d / 1000:.1f} km"
-
-      d_rounded = round(d, -1) if d < 200 else round(d, -2)
-      return f"{int(d_rounded)} m"
-
-    # imperial
     d_ft = d * METER_TO_FOOT
     if d_ft < 100:
-      return tr("Near")
-
+        return tr("Near")
     if d_ft >= 900:
-      return f"{d * METER_TO_MILE:.1f} mi"
-
+        return f"{d * METER_TO_MILE:.1f} mi"
     if d_ft < 500:
-      return f"{int(round(d_ft / 50) * 50)} ft"
-
+        return f"{int(round(d_ft / 50) * 50)} ft"
     return f"{int(round(d_ft / 100) * 100)} ft"
